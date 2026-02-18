@@ -290,8 +290,14 @@ export default function TrackerPage() {
       )}
       </div>
 
-      {/* Add Transaction Form */}
+      {/* Workflow & Add Transaction */}
       <div className="rounded-lg border border-border bg-card p-6">
+        <div className="mb-4 rounded border border-primary/20 bg-primary/5 p-3 text-xs text-muted">
+          <strong className="text-primary">How it works:</strong>{" "}
+          <span className="font-medium">First time?</span> Import history (one-time bulk from DexScreener).{" "}
+          <span className="font-medium">New transactions?</span> Sync from chain (auto-fetches from BSC).{" "}
+          <span className="font-medium">Manual entry?</span> Use the form below anytime.
+        </div>
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <h2 className="text-lg font-semibold">Add Transaction</h2>
           <button
@@ -313,7 +319,7 @@ export default function TrackerPage() {
         {importOpen && (
           <form onSubmit={handleImport} className="mb-6 rounded border border-border bg-bg/50 p-4">
             <p className="mb-2 text-xs text-muted">
-              Paste JSON array from DexScreener or: <code className="text-primary">[{`{"date":"2026-02-18","type":"BUY","tokens":16146558,"usdt":2.98}`}, ...]</code>
+              <strong>One-time import</strong> — Paste JSON from DexScreener or: <code className="text-primary">[{`{"date":"2026-02-18","type":"BUY","tokens":16146558,"usdt":2.98}`}, ...]</code>
             </p>
             <textarea
               value={importText}

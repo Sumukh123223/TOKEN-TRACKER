@@ -77,17 +77,19 @@ Open [http://localhost:3001](http://localhost:3001)
 ## Features
 
 - Add transactions: **Liquidity Add**, **Liquidity Remove**, **Buy**, **Sell**
-- **Import history** – Paste JSON array to bulk-load from DexScreener/screenshot
-- **Sync from chain** – Auto-fetch new Swap/Mint/Burn events from BSCScan (requires `BSCSCAN_API_KEY`)
+- **Import history** – One-time bulk load from DexScreener (paste JSON)
+- **Sync from chain** – Auto-fetch new Swap/Mint/Burn from BSC (free, no API key)
 - Auto-calculates: **Total Supply**, **Total Liquidity Added**, **Tokens in Pool**, **USDT in Pool**
 - Live token price and pool stats from DexScreener
 - Estimated pool value (USD)
 - Delete transactions
 - All data saved in PostgreSQL
 
-### Chain sync (optional)
+### Workflow
 
-**Sync from chain** uses the free public BSC RPC (`bsc-dataseed.binance.org`) — **no API key required**. It fetches Swap/Mint/Burn events via `eth_getLogs`. Recent ~2000 blocks per sync.
+1. **First time:** Use **Import history** to bulk-load past transactions from DexScreener (one-time).
+2. **Ongoing:** Use **Sync from chain** to auto-fetch new Buy/Sell/Liquidity transactions from BSC.
+3. **Anytime:** Add manual transactions via the form when needed.
 
 ---
 
