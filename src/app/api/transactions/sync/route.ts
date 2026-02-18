@@ -28,16 +28,34 @@ export async function POST() {
     });
     const knownHashes = new Set(existing.map((t) => t.txHash).filter(Boolean) as string[]);
 
-    // fromBlock/toBlock required by BSCScan. Use 38M (~late 2024) to capture all LXV pair activity.
-    const fromBlock = 38000000;
+    // BSCScan limits block range to ~5k. Use public RPC for block number (proxy may be deprecated).
+    const blockRes = await fetch("https://bsc-dataseed.binance.org/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1 }),
+    });
+    const blockData = await blockRes.json();
+    const toBlockHex = blockData?.result;
+    if (!toBlockHex || typeof toBlockHex !== "string") {
+      return NextResponse.json({
+        synced: 0,
+        message: blockData?.error?.message || "Could not fetch block number",
+        transactions: await prisma.transaction.findMany({ orderBy: { date: "asc" } }),
+        totals: calculateTotals(await prisma.transaction.findMany()),
+      });
+    }
+    const toBlock = parseInt(toBlockHex, 16);
+    const fromBlock = Math.max(0, toBlock - 5000);
+
     const logsRes = await fetch(
-      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${SWAP_TOPIC}&fromBlock=${fromBlock}&toBlock=latest&page=1&offset=1000&apikey=${apiKey}`
+      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${SWAP_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=1000&apikey=${apiKey}`
     );
     const swapData = await logsRes.json();
     if (swapData.status !== "1" || !Array.isArray(swapData.result)) {
+      const errMsg = swapData.result || swapData.message || "No swap logs";
       return NextResponse.json({
         synced: 0,
-        message: swapData.message || "No swap logs",
+        message: typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg).slice(0, 200),
         transactions: await prisma.transaction.findMany({ orderBy: { date: "asc" } }),
         totals: calculateTotals(await prisma.transaction.findMany()),
       });
@@ -83,7 +101,7 @@ export async function POST() {
     }
 
     const mintRes = await fetch(
-      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${MINT_TOPIC}&fromBlock=${fromBlock}&toBlock=latest&page=1&offset=500&apikey=${apiKey}`
+      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${MINT_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=500&apikey=${apiKey}`
     );
     const mintData = await mintRes.json();
     if (mintData.status === "1" && Array.isArray(mintData.result)) {
@@ -111,7 +129,7 @@ export async function POST() {
     }
 
     const burnRes = await fetch(
-      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${BURN_TOPIC}&fromBlock=${fromBlock}&toBlock=latest&page=1&offset=500&apikey=${apiKey}`
+      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${BURN_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=500&apikey=${apiKey}`
     );
     const burnData = await burnRes.json();
     if (burnData.status === "1" && Array.isArray(burnData.result)) {
