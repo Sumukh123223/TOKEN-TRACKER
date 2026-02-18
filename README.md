@@ -77,11 +77,17 @@ Open [http://localhost:3001](http://localhost:3001)
 ## Features
 
 - Add transactions: **Liquidity Add**, **Liquidity Remove**, **Buy**, **Sell**
+- **Import history** – Paste JSON array to bulk-load from DexScreener/screenshot
+- **Sync from chain** – Auto-fetch new Swap/Mint/Burn events from BSCScan (requires `BSCSCAN_API_KEY`)
 - Auto-calculates: **Total Supply**, **Total Liquidity Added**, **Tokens in Pool**, **USDT in Pool**
-- Live token price from DexScreener
+- Live token price and pool stats from DexScreener
 - Estimated pool value (USD)
 - Delete transactions
 - All data saved in PostgreSQL
+
+### Chain sync (optional)
+
+To enable **Sync from chain**, add `BSCSCAN_API_KEY` in Railway Variables. Get a free key at [bscscan.com/apis](https://bscscan.com/apis).
 
 ---
 

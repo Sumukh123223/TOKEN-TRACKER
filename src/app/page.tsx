@@ -41,6 +41,10 @@ export default function TrackerPage() {
     notes: "",
   });
   const [submitting, setSubmitting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   async function fetchData() {
     try {
@@ -89,6 +93,59 @@ export default function TrackerPage() {
       alert("Failed to add transaction");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleImport(e: React.FormEvent) {
+    e.preventDefault();
+    if (!importText.trim()) return;
+    setImporting(true);
+    try {
+      let data: { transactions?: unknown[] };
+      try {
+        data = JSON.parse(importText);
+      } catch {
+        alert("Invalid JSON. Use format: {\"transactions\": [{\"date\": \"2026-02-18\", \"type\": \"BUY\", \"tokens\": 1000, \"usdt\": 50}]}");
+        return;
+      }
+      const txList = Array.isArray(data) ? data : data.transactions;
+      if (!Array.isArray(txList)) {
+        alert("JSON must be an array or { transactions: [...] }");
+        return;
+      }
+      const res = await fetch("/api/transactions/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactions: txList }),
+      });
+      const result = await res.json();
+      if (result.error) throw new Error(result.error);
+      if (result.transactions) setTransactions(result.transactions);
+      if (result.totals) setTotals(result.totals);
+      setImportOpen(false);
+      setImportText("");
+    } catch (e) {
+      console.error(e);
+      alert(String(e instanceof Error ? e.message : "Import failed"));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/transactions/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (data.transactions) setTransactions(data.transactions);
+      if (data.totals) setTotals(data.totals);
+      if (data.synced > 0) alert(`Synced ${data.synced} new transaction(s) from chain.`);
+    } catch (e) {
+      console.error(e);
+      alert(String(e instanceof Error ? e.message : "Sync failed"));
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -230,11 +287,47 @@ export default function TrackerPage() {
       </div>
 
       {/* Add Transaction Form */}
-      <form
-        onSubmit={handleSubmit}
-        className="rounded-lg border border-border bg-card p-6"
-      >
-        <h2 className="mb-4 text-lg font-semibold">Add Transaction</h2>
+      <div className="rounded-lg border border-border bg-card p-6">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold">Add Transaction</h2>
+          <button
+            type="button"
+            onClick={() => setImportOpen(!importOpen)}
+            className="rounded bg-muted px-3 py-1.5 text-sm hover:bg-border"
+          >
+            {importOpen ? "Cancel" : "Import history"}
+          </button>
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={syncing}
+            className="rounded bg-primary/20 px-3 py-1.5 text-sm text-primary hover:bg-primary/30 disabled:opacity-50"
+          >
+            {syncing ? "Syncing…" : "Sync from chain"}
+          </button>
+        </div>
+        {importOpen && (
+          <form onSubmit={handleImport} className="mb-6 rounded border border-border bg-bg/50 p-4">
+            <p className="mb-2 text-xs text-muted">
+              Paste JSON array from DexScreener or: <code className="text-primary">[{`{"date":"2026-02-18","type":"BUY","tokens":16146558,"usdt":2.98}`}, ...]</code>
+            </p>
+            <textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              placeholder='[{"date":"2026-02-18","type":"BUY","tokens":16146558,"usdt":2.98},{"date":"2026-02-18","type":"LIQUIDITY_ADD","tokens":1761566,"usdt":9.96}]'
+              className="mb-2 h-32 w-full rounded border border-border bg-bg p-3 font-mono text-sm"
+              rows={4}
+            />
+            <button
+              type="submit"
+              disabled={importing || !importText.trim()}
+              className="rounded bg-primary px-4 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {importing ? "Importing…" : "Import"}
+            </button>
+          </form>
+        )}
+      <form onSubmit={handleSubmit}>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div>
             <label className="mb-1 block text-xs text-muted">Date</label>
@@ -305,6 +398,7 @@ export default function TrackerPage() {
           />
         </div>
       </form>
+      </div>
 
       {/* Transaction List */}
       <div className="rounded-lg border border-border bg-card overflow-hidden">
