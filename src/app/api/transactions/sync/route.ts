@@ -8,28 +8,46 @@ const MINT_TOPIC = "0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03
 const BURN_TOPIC = "0xdccd412f0b1252819cb1fd330b93224ca42612892bb3f4f789976e6d81936496";
 const DECIMALS = 18;
 
-const DELAY_MS = 4000; // 4 sec per external API call (rate-limit friendly)
+const RPC_URL = "https://bsc-dataseed.binance.org/";
+const DELAY_MS = 4000;
+const BLOCK_RANGE = 2000; // Public RPC often limits to 1–2k blocks
 
 function parseHexToNum(hex: string): number {
   return parseInt(hex, 16) / Math.pow(10, DECIMALS);
+}
+
+function toHex(n: number): string {
+  return "0x" + n.toString(16);
 }
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-const V2_BASE = "https://api.etherscan.io/v2/api";
-const CHAIN_ID = 56; // BSC
+async function rpc(method: string, params: unknown[]) {
+  const res = await fetch(RPC_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || "RPC error");
+  return data.result;
+}
+
+async function getLogs(topic0: string, fromBlock: number, toBlock: number) {
+  const logs = await rpc("eth_getLogs", [
+    {
+      address: PAIR_ADDRESS,
+      topics: [topic0],
+      fromBlock: toHex(fromBlock),
+      toBlock: toHex(toBlock),
+    },
+  ]);
+  return Array.isArray(logs) ? logs : [];
+}
 
 export async function POST() {
-  const apiKey = process.env.ETHERSCAN_API_KEY || process.env.BSCSCAN_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "ETHERSCAN_API_KEY or BSCSCAN_API_KEY required for chain sync. Get one at etherscan.io/apidashboard" },
-      { status: 503 }
-    );
-  }
-
   try {
     const existing = await prisma.transaction.findMany({
       where: { txHash: { not: null } },
@@ -37,45 +55,22 @@ export async function POST() {
     });
     const knownHashes = new Set(existing.map((t) => t.txHash).filter(Boolean) as string[]);
 
-    // BSCScan limits block range to ~5k. Use public RPC for block number (proxy may be deprecated).
     await sleep(DELAY_MS);
-    const blockRes = await fetch("https://bsc-dataseed.binance.org/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1 }),
-    });
-    const blockData = await blockRes.json();
-    const toBlockHex = blockData?.result;
-    if (!toBlockHex || typeof toBlockHex !== "string") {
-      return NextResponse.json({
-        synced: 0,
-        message: blockData?.error?.message || "Could not fetch block number",
-        transactions: await prisma.transaction.findMany({ orderBy: { date: "asc" } }),
-        totals: calculateTotals(await prisma.transaction.findMany()),
-      });
-    }
+    const toBlockHex = await rpc("eth_blockNumber", []);
     const toBlock = parseInt(toBlockHex, 16);
-    const fromBlock = Math.max(0, toBlock - 5000);
+    const fromBlock = Math.max(0, toBlock - BLOCK_RANGE);
 
-    await sleep(DELAY_MS);
-    const logsRes = await fetch(
-      `${V2_BASE}?chainid=${CHAIN_ID}&module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${SWAP_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=1000&apikey=${apiKey}`
-    );
-    const swapData = await logsRes.json();
-    if (swapData.status !== "1" || !Array.isArray(swapData.result)) {
-      const errMsg = swapData.result || swapData.message || "No swap logs";
-      return NextResponse.json({
-        synced: 0,
-        message: typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg).slice(0, 200),
-        transactions: await prisma.transaction.findMany({ orderBy: { date: "asc" } }),
-        totals: calculateTotals(await prisma.transaction.findMany()),
-      });
-    }
+    // BSC ~3 sec/block; estimate timestamp from block offset
+    const nowSec = Math.floor(Date.now() / 1000);
+    const blockToTs = (blockNum: number) => (nowSec - (toBlock - blockNum) * 3) * 1000;
 
     const toInsert: { date: Date; type: string; tokens: number; usdt: number; notes: string | null; txHash: string }[] = [];
 
-    for (const log of swapData.result) {
-      const txHash = log.transactionHash?.toLowerCase();
+    await sleep(DELAY_MS);
+    const swapLogs = await getLogs(SWAP_TOPIC, fromBlock, toBlock);
+
+    for (const log of swapLogs) {
+      const txHash = (log.transactionHash || "").toLowerCase();
       if (!txHash || knownHashes.has(txHash)) continue;
 
       const data = (log.data || "").slice(2);
@@ -86,109 +81,87 @@ export async function POST() {
       const amount0Out = parseHexToNum(data.slice(128, 192));
       const amount1Out = parseHexToNum(data.slice(192, 256));
 
-      const timestamp = parseInt(log.timeStamp, 10) * 1000;
-      const date = new Date(timestamp);
+      const blockNum = parseInt(log.blockNumber, 16);
+      const date = new Date(blockToTs(blockNum));
 
       if (amount1Out > 0 && amount0In > 0) {
-        toInsert.push({
-          date,
-          type: "BUY",
-          tokens: amount1Out,
-          usdt: amount0In,
-          notes: txHash,
-          txHash,
-        });
+        toInsert.push({ date, type: "BUY", tokens: amount1Out, usdt: amount0In, notes: txHash, txHash });
       } else if (amount1In > 0 && amount0Out > 0) {
-        toInsert.push({
-          date,
-          type: "SELL",
-          tokens: amount1In,
-          usdt: amount0Out,
-          notes: txHash,
-          txHash,
-        });
+        toInsert.push({ date, type: "SELL", tokens: amount1In, usdt: amount0Out, notes: txHash, txHash });
       }
       knownHashes.add(txHash);
     }
 
     await sleep(DELAY_MS);
-    const mintRes = await fetch(
-      `${V2_BASE}?chainid=${CHAIN_ID}&module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${MINT_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=500&apikey=${apiKey}`
-    );
-    const mintData = await mintRes.json();
-    if (mintData.status === "1" && Array.isArray(mintData.result)) {
-      for (const log of mintData.result) {
-        const txHash = log.transactionHash?.toLowerCase();
-        if (!txHash || knownHashes.has(txHash)) continue;
+    const mintLogs = await getLogs(MINT_TOPIC, fromBlock, toBlock);
 
-        const data = (log.data || "").slice(2);
-        if (data.length < 128) continue;
+    for (const log of mintLogs) {
+      const txHash = (log.transactionHash || "").toLowerCase();
+      if (!txHash || knownHashes.has(txHash)) continue;
 
-        const amount0 = parseHexToNum(data.slice(0, 64));
-        const amount1 = parseHexToNum(data.slice(64, 128));
-        const timestamp = parseInt(log.timeStamp, 10) * 1000;
+      const data = (log.data || "").slice(2);
+      if (data.length < 128) continue;
 
-        toInsert.push({
-          date: new Date(timestamp),
-          type: "LIQUIDITY_ADD",
-          tokens: amount1,
-          usdt: amount0,
-          notes: txHash,
-          txHash,
-        });
-        knownHashes.add(txHash);
-      }
+      const amount0 = parseHexToNum(data.slice(0, 64));
+      const amount1 = parseHexToNum(data.slice(64, 128));
+      const blockNum = parseInt(log.blockNumber, 16);
+
+      toInsert.push({
+        date: new Date(blockToTs(blockNum)),
+        type: "LIQUIDITY_ADD",
+        tokens: amount1,
+        usdt: amount0,
+        notes: txHash,
+        txHash,
+      });
+      knownHashes.add(txHash);
     }
 
     await sleep(DELAY_MS);
-    const burnRes = await fetch(
-      `${V2_BASE}?chainid=${CHAIN_ID}&module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${BURN_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=500&apikey=${apiKey}`
-    );
-    const burnData = await burnRes.json();
-    if (burnData.status === "1" && Array.isArray(burnData.result)) {
-      for (const log of burnData.result) {
-        const txHash = log.transactionHash?.toLowerCase();
-        if (!txHash || knownHashes.has(txHash)) continue;
+    const burnLogs = await getLogs(BURN_TOPIC, fromBlock, toBlock);
 
-        const data = (log.data || "").slice(2);
-        if (data.length < 128) continue;
+    for (const log of burnLogs) {
+      const txHash = (log.transactionHash || "").toLowerCase();
+      if (!txHash || knownHashes.has(txHash)) continue;
 
-        const amount0 = parseHexToNum(data.slice(0, 64));
-        const amount1 = parseHexToNum(data.slice(64, 128));
-        const timestamp = parseInt(log.timeStamp, 10) * 1000;
+      const data = (log.data || "").slice(2);
+      if (data.length < 128) continue;
 
-        toInsert.push({
-          date: new Date(timestamp),
-          type: "LIQUIDITY_REMOVE",
-          tokens: amount1,
-          usdt: amount0,
-          notes: txHash,
-          txHash,
-        });
-        knownHashes.add(txHash);
-      }
+      const amount0 = parseHexToNum(data.slice(0, 64));
+      const amount1 = parseHexToNum(data.slice(64, 128));
+      const blockNum = parseInt(log.blockNumber, 16);
+
+      toInsert.push({
+        date: new Date(blockToTs(blockNum)),
+        type: "LIQUIDITY_REMOVE",
+        tokens: amount1,
+        usdt: amount0,
+        notes: txHash,
+        txHash,
+      });
+      knownHashes.add(txHash);
     }
 
     for (const tx of toInsert) {
       try {
         await prisma.transaction.create({ data: tx });
       } catch {
-        // already exists (txHash unique)
+        // already exists
       }
     }
 
-    const transactions = await prisma.transaction.findMany({
-      orderBy: { date: "asc" },
-    });
+    const transactions = await prisma.transaction.findMany({ orderBy: { date: "asc" } });
     const totals = calculateTotals(transactions);
 
-    return NextResponse.json({
-      synced: toInsert.length,
-      transactions,
-      totals,
-    });
+    return NextResponse.json({ synced: toInsert.length, transactions, totals });
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ error: "Sync failed" }, { status: 500 });
+    const txList = await prisma.transaction.findMany({ orderBy: { date: "asc" } });
+    return NextResponse.json({
+      synced: 0,
+      message: e instanceof Error ? e.message : "Sync failed",
+      transactions: txList,
+      totals: calculateTotals(txList),
+    });
   }
 }
