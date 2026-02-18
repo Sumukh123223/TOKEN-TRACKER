@@ -20,10 +20,18 @@ interface Totals {
   usdtInPool: number;
 }
 
+interface DexData {
+  priceUsd: string | null;
+  liquidity: { usd: number; base: number; quote: number } | null;
+  volume: { h24: number; h6: number } | null;
+  txns: { h24: { buys: number; sells: number }; h6: { buys: number; sells: number } } | null;
+}
+
 export default function TrackerPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [price, setPrice] = useState<string | null>(null);
+  const [dexData, setDexData] = useState<DexData | null>(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
@@ -36,15 +44,16 @@ export default function TrackerPage() {
 
   async function fetchData() {
     try {
-      const [txRes, priceRes] = await Promise.all([
+      const [txRes, dexRes] = await Promise.all([
         fetch("/api/transactions"),
-        fetch("/api/price"),
+        fetch("/api/dex"),
       ]);
       const txData = await txRes.json();
-      const priceData = await priceRes.json();
+      const dex = await dexRes.json();
       if (txData.transactions) setTransactions(txData.transactions);
       if (txData.totals) setTotals(txData.totals);
-      if (priceData.priceUsd) setPrice(priceData.priceUsd);
+      if (dex.priceUsd) setPrice(dex.priceUsd);
+      if (dex.priceUsd || dex.liquidity || dex.volume) setDexData(dex);
     } catch (e) {
       console.error(e);
     } finally {
@@ -114,8 +123,70 @@ export default function TrackerPage() {
 
   return (
     <div className="space-y-8">
-      {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      {/* Live from DEX (DexScreener) */}
+      {dexData && (
+        <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-primary">
+            Live from DexScreener (PancakeSwap)
+          </h2>
+          <p className="mb-4 text-xs text-muted">
+            Auto-fetched from DEX — no manual entry needed.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div>
+              <div className="text-xs text-muted">Price (USD)</div>
+              <div className="font-mono font-semibold">
+                {dexData.priceUsd ? `$${parseFloat(dexData.priceUsd).toFixed(10)}` : "—"}
+              </div>
+            </div>
+            {dexData.liquidity && (
+              <>
+                <div>
+                  <div className="text-xs text-muted">Liquidity (USD)</div>
+                  <div className="font-semibold">
+                    ${dexData.liquidity.usd?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted">Tokens in Pool</div>
+                  <div className="font-mono font-semibold">
+                    {dexData.liquidity.base?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? "—"} LXV
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted">USDT in Pool</div>
+                  <div className="font-mono font-semibold">
+                    ${dexData.liquidity.quote?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? "—"}
+                  </div>
+                </div>
+              </>
+            )}
+            {dexData.volume && (
+              <div>
+                <div className="text-xs text-muted">24h Volume</div>
+                <div className="font-semibold">
+                  ${dexData.volume.h24?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? "—"}
+                </div>
+              </div>
+            )}
+            {dexData.txns && (
+              <div>
+                <div className="text-xs text-muted">24h Txns (Buy/Sell)</div>
+                <div className="font-mono text-sm">
+                  {dexData.txns.h24?.buys ?? 0} / {dexData.txns.h24?.sells ?? 0}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Your Manual Tracker Summary */}
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-muted">
+          Your Manual Tracker
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="text-xs text-muted">Total Supply</div>
           <div className="text-lg font-semibold">
@@ -133,6 +204,7 @@ export default function TrackerPage() {
           <div className="text-lg font-semibold">
             {price ? `$${parseFloat(price).toFixed(10)}` : "—"}
           </div>
+          <div className="mt-0.5 text-[10px] text-muted">from DexScreener</div>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="text-xs text-muted">Tokens in Pool</div>
@@ -147,7 +219,7 @@ export default function TrackerPage() {
           </div>
         </div>
       </div>
-      {poolValueUsd != null && (
+      {poolValueUsd != null && poolValueUsd > 0 && (
         <div className="rounded-lg border border-primary/50 bg-primary/10 p-4">
           <div className="text-xs text-muted">Estimated Pool Value (USD)</div>
           <div className="text-xl font-bold text-primary">
@@ -155,6 +227,7 @@ export default function TrackerPage() {
           </div>
         </div>
       )}
+      </div>
 
       {/* Add Transaction Form */}
       <form
