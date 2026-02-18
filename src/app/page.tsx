@@ -140,7 +140,11 @@ export default function TrackerPage() {
       if (data.error) throw new Error(data.error);
       if (data.transactions) setTransactions(data.transactions);
       if (data.totals) setTotals(data.totals);
-      if (data.synced > 0) alert(`Synced ${data.synced} new transaction(s) from chain.`);
+      if (data.synced > 0) {
+        alert(`Synced ${data.synced} new transaction(s) from chain.`);
+      } else if (data.message) {
+        alert(`Sync: ${data.message}`);
+      }
     } catch (e) {
       console.error(e);
       alert(String(e instanceof Error ? e.message : "Sync failed"));

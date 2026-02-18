@@ -28,8 +28,10 @@ export async function POST() {
     });
     const knownHashes = new Set(existing.map((t) => t.txHash).filter(Boolean) as string[]);
 
+    // fromBlock/toBlock required by BSCScan. Use 38M (~late 2024) to capture all LXV pair activity.
+    const fromBlock = 38000000;
     const logsRes = await fetch(
-      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${SWAP_TOPIC}&page=1&offset=1000&apikey=${apiKey}`
+      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${SWAP_TOPIC}&fromBlock=${fromBlock}&toBlock=latest&page=1&offset=1000&apikey=${apiKey}`
     );
     const swapData = await logsRes.json();
     if (swapData.status !== "1" || !Array.isArray(swapData.result)) {
@@ -81,7 +83,7 @@ export async function POST() {
     }
 
     const mintRes = await fetch(
-      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${MINT_TOPIC}&page=1&offset=500&apikey=${apiKey}`
+      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${MINT_TOPIC}&fromBlock=${fromBlock}&toBlock=latest&page=1&offset=500&apikey=${apiKey}`
     );
     const mintData = await mintRes.json();
     if (mintData.status === "1" && Array.isArray(mintData.result)) {
@@ -109,7 +111,7 @@ export async function POST() {
     }
 
     const burnRes = await fetch(
-      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${BURN_TOPIC}&page=1&offset=500&apikey=${apiKey}`
+      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${BURN_TOPIC}&fromBlock=${fromBlock}&toBlock=latest&page=1&offset=500&apikey=${apiKey}`
     );
     const burnData = await burnRes.json();
     if (burnData.status === "1" && Array.isArray(burnData.result)) {
