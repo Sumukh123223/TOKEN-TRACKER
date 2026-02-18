@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     });
     const totals = calculateTotals(transactions);
 
-    return NextResponse.json({ transaction: tx, totals });
+    return NextResponse.json({ transactions, totals });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "Failed to create" }, { status: 500 });
