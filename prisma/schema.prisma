@@ -1,0 +1,24 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  date        DateTime
+  type        String   // LIQUIDITY_ADD | LIQUIDITY_REMOVE | BUY | SELL
+  tokens      Float
+  usdt        Float
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
+model Setting {
+  id    String @id @default("config")
+  key   String
+  value String
+}
