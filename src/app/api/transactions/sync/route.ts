@@ -8,8 +8,14 @@ const MINT_TOPIC = "0x4c209b5fc8ad50758f13e2e1088ba56a560dff690a1c6fef26394f4c03
 const BURN_TOPIC = "0xdccd412f0b1252819cb1fd330b93224ca42612892bb3f4f789976e6d81936496";
 const DECIMALS = 18;
 
+const DELAY_MS = 4000; // 4 sec per external API call (rate-limit friendly)
+
 function parseHexToNum(hex: string): number {
   return parseInt(hex, 16) / Math.pow(10, DECIMALS);
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 const V2_BASE = "https://api.etherscan.io/v2/api";
@@ -32,6 +38,7 @@ export async function POST() {
     const knownHashes = new Set(existing.map((t) => t.txHash).filter(Boolean) as string[]);
 
     // BSCScan limits block range to ~5k. Use public RPC for block number (proxy may be deprecated).
+    await sleep(DELAY_MS);
     const blockRes = await fetch("https://bsc-dataseed.binance.org/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -50,6 +57,7 @@ export async function POST() {
     const toBlock = parseInt(toBlockHex, 16);
     const fromBlock = Math.max(0, toBlock - 5000);
 
+    await sleep(DELAY_MS);
     const logsRes = await fetch(
       `${V2_BASE}?chainid=${CHAIN_ID}&module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${SWAP_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=1000&apikey=${apiKey}`
     );
@@ -103,6 +111,7 @@ export async function POST() {
       knownHashes.add(txHash);
     }
 
+    await sleep(DELAY_MS);
     const mintRes = await fetch(
       `${V2_BASE}?chainid=${CHAIN_ID}&module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${MINT_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=500&apikey=${apiKey}`
     );
@@ -131,6 +140,7 @@ export async function POST() {
       }
     }
 
+    await sleep(DELAY_MS);
     const burnRes = await fetch(
       `${V2_BASE}?chainid=${CHAIN_ID}&module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${BURN_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=500&apikey=${apiKey}`
     );
