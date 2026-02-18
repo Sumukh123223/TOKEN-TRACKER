@@ -12,11 +12,14 @@ function parseHexToNum(hex: string): number {
   return parseInt(hex, 16) / Math.pow(10, DECIMALS);
 }
 
+const V2_BASE = "https://api.etherscan.io/v2/api";
+const CHAIN_ID = 56; // BSC
+
 export async function POST() {
-  const apiKey = process.env.BSCSCAN_API_KEY;
+  const apiKey = process.env.ETHERSCAN_API_KEY || process.env.BSCSCAN_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "BSCSCAN_API_KEY not set. Add it in Railway for chain sync." },
+      { error: "ETHERSCAN_API_KEY or BSCSCAN_API_KEY required for chain sync. Get one at etherscan.io/apidashboard" },
       { status: 503 }
     );
   }
@@ -48,7 +51,7 @@ export async function POST() {
     const fromBlock = Math.max(0, toBlock - 5000);
 
     const logsRes = await fetch(
-      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${SWAP_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=1000&apikey=${apiKey}`
+      `${V2_BASE}?chainid=${CHAIN_ID}&module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${SWAP_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=1000&apikey=${apiKey}`
     );
     const swapData = await logsRes.json();
     if (swapData.status !== "1" || !Array.isArray(swapData.result)) {
@@ -101,7 +104,7 @@ export async function POST() {
     }
 
     const mintRes = await fetch(
-      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${MINT_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=500&apikey=${apiKey}`
+      `${V2_BASE}?chainid=${CHAIN_ID}&module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${MINT_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=500&apikey=${apiKey}`
     );
     const mintData = await mintRes.json();
     if (mintData.status === "1" && Array.isArray(mintData.result)) {
@@ -129,7 +132,7 @@ export async function POST() {
     }
 
     const burnRes = await fetch(
-      `https://api.bscscan.com/api?module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${BURN_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=500&apikey=${apiKey}`
+      `${V2_BASE}?chainid=${CHAIN_ID}&module=logs&action=getLogs&address=${PAIR_ADDRESS}&topic0=${BURN_TOPIC}&fromBlock=${fromBlock}&toBlock=${toBlock}&page=1&offset=500&apikey=${apiKey}`
     );
     const burnData = await burnRes.json();
     if (burnData.status === "1" && Array.isArray(burnData.result)) {

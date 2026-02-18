@@ -87,7 +87,7 @@ Open [http://localhost:3001](http://localhost:3001)
 
 ### Chain sync (optional)
 
-To enable **Sync from chain**, add `BSCSCAN_API_KEY` in Railway Variables. Get a free key at [bscscan.com/apis](https://bscscan.com/apis).
+To enable **Sync from chain**, add `ETHERSCAN_API_KEY` in Railway Variables. Get a key at [etherscan.io/apidashboard](https://etherscan.io/apidashboard) (Etherscan API V2, works for BSC). `BSCSCAN_API_KEY` is also supported for backwards compatibility.
 
 ---
 
